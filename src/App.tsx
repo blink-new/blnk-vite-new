@@ -1,139 +1,191 @@
-import { useState } from 'react'
-import { motion } from 'framer-motion'
-import { useForm } from 'react-hook-form'
-import toast from 'react-hot-toast'
-import { LucideHeart, LucideGithub } from 'lucide-react'
-import clsx from 'clsx'
+import { useState, useEffect } from 'react'
+import { AnimatePresence, motion } from 'framer-motion'
+import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd'
+import { Plus, X, Check, Star, Trash2 } from 'lucide-react'
+import { cn } from './lib/utils'
 
-type FormData = {
-  name: string
-  email: string
+interface Todo {
+  id: string
+  text: string
+  completed: boolean
+  important: boolean
 }
 
-function App() {
-  const [count, setCount] = useState(0)
-  const { register, handleSubmit, formState: { errors } } = useForm<FormData>()
-  
-  const onSubmit = (data: FormData) => {
-    console.log(data)
-    toast.success(`Hello, ${data.name}!`)
+export default function App() {
+  const [todos, setTodos] = useState<Todo[]>(() => {
+    const saved = localStorage.getItem('todos')
+    return saved ? JSON.parse(saved) : []
+  })
+  const [newTodo, setNewTodo] = useState('')
+  const [isAdding, setIsAdding] = useState(false)
+
+  useEffect(() => {
+    localStorage.setItem('todos', JSON.stringify(todos))
+  }, [todos])
+
+  const addTodo = (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!newTodo.trim()) return
+    
+    setTodos(prev => [...prev, {
+      id: crypto.randomUUID(),
+      text: newTodo.trim(),
+      completed: false,
+      important: false
+    }])
+    setNewTodo('')
+    setIsAdding(false)
+  }
+
+  const toggleComplete = (id: string) => {
+    setTodos(prev => prev.map(todo => 
+      todo.id === id ? { ...todo, completed: !todo.completed } : todo
+    ))
+  }
+
+  const toggleImportant = (id: string) => {
+    setTodos(prev => prev.map(todo => 
+      todo.id === id ? { ...todo, important: !todo.important } : todo
+    ))
+  }
+
+  const deleteTodo = (id: string) => {
+    setTodos(prev => prev.filter(todo => todo.id !== id))
+  }
+
+  const handleDragEnd = (result: any) => {
+    if (!result.destination) return
+    
+    const items = Array.from(todos)
+    const [reorderedItem] = items.splice(result.source.index, 1)
+    items.splice(result.destination.index, 0, reorderedItem)
+    
+    setTodos(items)
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-primary-50 to-secondary-100 flex flex-col items-center justify-center p-4">
-      <motion.div 
-        initial={{ opacity: 0, y: -20 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="max-w-md w-full bg-white rounded-xl shadow-lg p-8"
-      >
-        <header className="text-center mb-8">
-          <h1 className="text-3xl font-bold text-primary-700">
-            Vite + React + TypeScript
-          </h1>
-          <motion.div 
-            className="mt-2 flex items-center justify-center gap-2 text-secondary-500"
-            whileHover={{ scale: 1.05 }}
-          >
-            <LucideHeart className="text-red-500" />
-            <span>Development Environment</span>
-          </motion.div>
-        </header>
+    <div className="min-h-screen bg-gradient-to-br from-indigo-50 to-purple-50 dark:from-gray-900 dark:to-indigo-950 p-4 sm:p-8">
+      <div className="max-w-2xl mx-auto">
+        <h1 className="text-4xl font-bold text-indigo-950 dark:text-white mb-8">
+          My Tasks
+        </h1>
 
-        <div className="mb-8">
-          <div className="flex items-center justify-center mb-4">
-            <button
-              className={clsx(
-                "px-4 py-2 rounded-md transition-all duration-200",
-                "bg-primary-600 hover:bg-primary-700 text-white",
-                "focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2"
-              )}
-              onClick={() => {
-                setCount(count + 1)
-                toast.success(`Count increased to ${count + 1}!`)
-              }}
+        <DragDropContext onDragEnd={handleDragEnd}>
+          <Droppable droppableId="todos">
+            {(provided) => (
+              <div
+                {...provided.droppableProps}
+                ref={provided.innerRef}
+                className="space-y-2"
+              >
+                <AnimatePresence>
+                  {todos.map((todo, index) => (
+                    <Draggable key={todo.id} draggableId={todo.id} index={index}>
+                      {(provided) => (
+                        <motion.div
+                          initial={{ opacity: 0, y: 10 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          exit={{ opacity: 0, x: -100 }}
+                          ref={provided.innerRef}
+                          {...provided.draggableProps}
+                          {...provided.dragHandleProps}
+                          className={cn(
+                            "group bg-white dark:bg-gray-800 rounded-xl p-4 shadow-sm hover:shadow-md transition-all",
+                            todo.completed && "opacity-75"
+                          )}
+                        >
+                          <div className="flex items-center gap-3">
+                            <button
+                              onClick={() => toggleComplete(todo.id)}
+                              className={cn(
+                                "w-6 h-6 rounded-full border-2 flex items-center justify-center transition-colors",
+                                todo.completed 
+                                  ? "bg-indigo-600 border-indigo-600" 
+                                  : "border-gray-300 hover:border-indigo-500"
+                              )}
+                            >
+                              {todo.completed && (
+                                <Check className="w-4 h-4 text-white" />
+                              )}
+                            </button>
+                            
+                            <span className={cn(
+                              "flex-1 text-gray-800 dark:text-gray-200",
+                              todo.completed && "line-through text-gray-500"
+                            )}>
+                              {todo.text}
+                            </span>
+
+                            <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                              <button
+                                onClick={() => toggleImportant(todo.id)}
+                                className={cn(
+                                  "p-1 rounded hover:bg-gray-100 dark:hover:bg-gray-700",
+                                  todo.important && "text-yellow-500"
+                                )}
+                              >
+                                <Star className="w-5 h-5" />
+                              </button>
+                              <button
+                                onClick={() => deleteTodo(todo.id)}
+                                className="p-1 rounded hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-500 hover:text-red-500"
+                              >
+                                <Trash2 className="w-5 h-5" />
+                              </button>
+                            </div>
+                          </div>
+                        </motion.div>
+                      )}
+                    </Draggable>
+                  ))}
+                </AnimatePresence>
+                {provided.placeholder}
+              </div>
+            )}
+          </Droppable>
+        </DragDropContext>
+
+        <AnimatePresence>
+          {isAdding ? (
+            <motion.form
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 10 }}
+              onSubmit={addTodo}
+              className="mt-4"
             >
-              Count is {count}
-            </button>
-          </div>
-          <p className="text-sm text-center text-secondary-500">
-            Edit <code className="font-mono bg-secondary-100 p-1 rounded">src/App.tsx</code> and save to test HMR
-          </p>
-        </div>
-
-        <form 
-          onSubmit={handleSubmit(onSubmit)}
-          className="space-y-4"
-        >
-          <div>
-            <label htmlFor="name" className="block text-sm font-medium text-secondary-700">
-              Name
-            </label>
-            <input
-              id="name"
-              type="text"
-              className={clsx(
-                "mt-1 block w-full rounded-md border-secondary-300 shadow-sm",
-                "focus:border-primary-500 focus:ring-primary-500",
-                errors.name && "border-red-500"
-              )}
-              {...register("name", { required: "Name is required" })}
-            />
-            {errors.name && (
-              <p className="mt-1 text-sm text-red-600">{errors.name.message}</p>
-            )}
-          </div>
-          
-          <div>
-            <label htmlFor="email" className="block text-sm font-medium text-secondary-700">
-              Email
-            </label>
-            <input
-              id="email"
-              type="email"
-              className={clsx(
-                "mt-1 block w-full rounded-md border-secondary-300 shadow-sm",
-                "focus:border-primary-500 focus:ring-primary-500",
-                errors.email && "border-red-500"
-              )}
-              {...register("email", { 
-                required: "Email is required",
-                pattern: {
-                  value: /^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}$/i,
-                  message: "Invalid email address"
-                }
-              })}
-            />
-            {errors.email && (
-              <p className="mt-1 text-sm text-red-600">{errors.email.message}</p>
-            )}
-          </div>
-          
-          <button
-            type="submit"
-            className={clsx(
-              "w-full px-4 py-2 rounded-md transition-all duration-200",
-              "bg-primary-600 hover:bg-primary-700 text-white",
-              "focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2"
-            )}
-          >
-            Submit
-          </button>
-        </form>
-      </motion.div>
-      
-      <footer className="mt-8 text-secondary-500 flex items-center gap-2">
-        <LucideGithub />
-        <a 
-          href="https://github.com"
-          target="_blank"
-          rel="noreferrer"
-          className="hover:text-primary-600 transition-colors"
-        >
-          View on GitHub
-        </a>
-      </footer>
+              <div className="flex gap-2">
+                <input
+                  autoFocus
+                  type="text"
+                  value={newTodo}
+                  onChange={(e) => setNewTodo(e.target.value)}
+                  placeholder="What needs to be done?"
+                  className="flex-1 px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                />
+                <button
+                  type="button"
+                  onClick={() => setIsAdding(false)}
+                  className="p-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+                >
+                  <X className="w-6 h-6" />
+                </button>
+              </div>
+            </motion.form>
+          ) : (
+            <motion.button
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 10 }}
+              onClick={() => setIsAdding(true)}
+              className="mt-4 flex items-center gap-2 text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300"
+            >
+              <Plus className="w-5 h-5" />
+              <span>Add new task</span>
+            </motion.button>
+          )}
+        </AnimatePresence>
+      </div>
     </div>
   )
 }
-
-export default App 
