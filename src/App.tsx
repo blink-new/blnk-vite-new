@@ -1,45 +1,56 @@
 import { useState, useEffect } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd'
-import { Plus, X, Check, Star, Trash2 } from 'lucide-react'
+import { Plus, Search, Filter } from 'lucide-react'
 import { cn } from './lib/utils'
-
-interface Todo {
-  id: string
-  text: string
-  completed: boolean
-  important: boolean
-}
+import { EmptyState } from './components/EmptyState'
+import { TaskStats } from './components/TaskStats'
+import { TaskForm } from './components/TaskForm'
+import { TaskItem } from './components/TaskItem'
+import type { Todo, TodoStats } from './types'
 
 export default function App() {
   const [todos, setTodos] = useState<Todo[]>(() => {
     const saved = localStorage.getItem('todos')
     return saved ? JSON.parse(saved) : []
   })
-  const [newTodo, setNewTodo] = useState('')
-  const [isAdding, setIsAdding] = useState(false)
+  const [isAddingTask, setIsAddingTask] = useState(false)
+  const [searchQuery, setSearchQuery] = useState('')
+  const [categoryFilter, setCategoryFilter] = useState<string>('all')
+  const [priorityFilter, setPriorityFilter] = useState<string>('all')
+  const [showCompleted, setShowCompleted] = useState(true)
 
   useEffect(() => {
     localStorage.setItem('todos', JSON.stringify(todos))
   }, [todos])
 
-  const addTodo = (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!newTodo.trim()) return
-    
+  useEffect(() => {
+    const handleKeyPress = (e: KeyboardEvent) => {
+      if (e.key === 'n' && (e.metaKey || e.ctrlKey)) {
+        e.preventDefault()
+        setIsAddingTask(true)
+      }
+    }
+    window.addEventListener('keydown', handleKeyPress)
+    return () => window.removeEventListener('keydown', handleKeyPress)
+  }, [])
+
+  const addTodo = (todoData: Omit<Todo, 'id' | 'completed' | 'createdAt'>) => {
     setTodos(prev => [...prev, {
+      ...todoData,
       id: crypto.randomUUID(),
-      text: newTodo.trim(),
       completed: false,
-      important: false
+      createdAt: new Date().toISOString(),
     }])
-    setNewTodo('')
-    setIsAdding(false)
   }
 
   const toggleComplete = (id: string) => {
     setTodos(prev => prev.map(todo => 
-      todo.id === id ? { ...todo, completed: !todo.completed } : todo
+      todo.id === id ? {
+        ...todo,
+        completed: !todo.completed,
+        completedAt: !todo.completed ? new Date().toISOString() : undefined
+      } : todo
     ))
   }
 
@@ -53,6 +64,14 @@ export default function App() {
     setTodos(prev => prev.filter(todo => todo.id !== id))
   }
 
+  const updateTodo = (id: string, updates: Partial<Todo>) => {
+    setTodos(prev => prev.map(todo => 
+      todo.id === id ? { ...todo,
+        ...updates
+      } : todo
+    ))
+  }
+
   const handleDragEnd = (result: any) => {
     if (!result.destination) return
     
@@ -63,128 +82,143 @@ export default function App() {
     setTodos(items)
   }
 
+  const filteredTodos = todos
+    .filter(todo => showCompleted || !todo.completed)
+    .filter(todo => todo.text.toLowerCase().includes(searchQuery.toLowerCase()))
+    .filter(todo => categoryFilter === 'all' || todo.category === categoryFilter)
+    .filter(todo => priorityFilter === 'all' || todo.priority === priorityFilter)
+
+  const stats: TodoStats = {
+    total: todos.length,
+    completed: todos.filter(t => t.completed).length,
+    pending: todos.filter(t => !t.completed).length,
+    overdue: todos.filter(t => 
+      t.dueDate && 
+      new Date(t.dueDate) < new Date() && 
+      !t.completed
+    ).length
+  }
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-indigo-50 to-purple-50 dark:from-gray-900 dark:to-indigo-950 p-4 sm:p-8">
-      <div className="max-w-2xl mx-auto">
-        <h1 className="text-4xl font-bold text-indigo-950 dark:text-white mb-8">
-          My Tasks
-        </h1>
+      <div className="max-w-4xl mx-auto">
+        <motion.div
+          initial={{ opacity: 0, y: -20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="flex items-center justify-between mb-8"
+        >
+          <h1 className="text-4xl font-bold text-indigo-950 dark:text-white">
+            My Tasks
+          </h1>
+          <button
+            onClick={() => setIsAddingTask(true)}
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2"
+          >
+            <Plus className="w-5 h-5" />
+            <span className="hidden sm:inline">Add Task</span>
+            <span className="text-xs opacity-70 ml-1">(⌘N)</span>
+          </button>
+        </motion.div>
 
-        <DragDropContext onDragEnd={handleDragEnd}>
-          <Droppable droppableId="todos">
-            {(provided) => (
-              <div
-                {...provided.droppableProps}
-                ref={provided.innerRef}
-                className="space-y-2"
+        <TaskStats stats={stats} />
+
+        <div className="bg-white/50 dark:bg-gray-800/50 rounded-xl p-4 backdrop-blur-sm mb-6">
+          <div className="flex flex-col sm:flex-row gap-4">
+            <div className="relative flex-1">
+              <Search className="absolute left-3 top-2.5 w-5 h-5 text-gray-400" />
+              <input
+                type="text"
+                placeholder="Search tasks..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full pl-10 pr-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              />
+            </div>
+            
+            <div className="flex gap-4">
+              <select
+                value={categoryFilter}
+                onChange={(e) => setCategoryFilter(e.target.value)}
+                className="px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-indigo-500"
               >
-                <AnimatePresence>
-                  {todos.map((todo, index) => (
-                    <Draggable key={todo.id} draggableId={todo.id} index={index}>
-                      {(provided) => (
-                        <motion.div
-                          initial={{ opacity: 0, y: 10 }}
-                          animate={{ opacity: 1, y: 0 }}
-                          exit={{ opacity: 0, x: -100 }}
-                          ref={provided.innerRef}
-                          {...provided.draggableProps}
-                          {...provided.dragHandleProps}
-                          className={cn(
-                            "group bg-white dark:bg-gray-800 rounded-xl p-4 shadow-sm hover:shadow-md transition-all",
-                            todo.completed && "opacity-75"
-                          )}
-                        >
-                          <div className="flex items-center gap-3">
-                            <button
-                              onClick={() => toggleComplete(todo.id)}
-                              className={cn(
-                                "w-6 h-6 rounded-full border-2 flex items-center justify-center transition-colors",
-                                todo.completed 
-                                  ? "bg-indigo-600 border-indigo-600" 
-                                  : "border-gray-300 hover:border-indigo-500"
-                              )}
-                            >
-                              {todo.completed && (
-                                <Check className="w-4 h-4 text-white" />
-                              )}
-                            </button>
-                            
-                            <span className={cn(
-                              "flex-1 text-gray-800 dark:text-gray-200",
-                              todo.completed && "line-through text-gray-500"
-                            )}>
-                              {todo.text}
-                            </span>
+                <option value="all">All Categories</option>
+                <option value="inbox">📥 Inbox</option>
+                <option value="work">💼 Work</option>
+                <option value="personal">🏠 Personal</option>
+                <option value="shopping">🛒 Shopping</option>
+                <option value="health">❤️ Health</option>
+              </select>
 
-                            <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                              <button
-                                onClick={() => toggleImportant(todo.id)}
-                                className={cn(
-                                  "p-1 rounded hover:bg-gray-100 dark:hover:bg-gray-700",
-                                  todo.important && "text-yellow-500"
-                                )}
-                              >
-                                <Star className="w-5 h-5" />
-                              </button>
-                              <button
-                                onClick={() => deleteTodo(todo.id)}
-                                className="p-1 rounded hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-500 hover:text-red-500"
-                              >
-                                <Trash2 className="w-5 h-5" />
-                              </button>
-                            </div>
-                          </div>
-                        </motion.div>
-                      )}
-                    </Draggable>
-                  ))}
-                </AnimatePresence>
-                {provided.placeholder}
-              </div>
-            )}
-          </Droppable>
-        </DragDropContext>
+              <select
+                value={priorityFilter}
+                onChange={(e) => setPriorityFilter(e.target.value)}
+                className="px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              >
+                <option value="all">All Priorities</option>
+                <option value="low">🟢 Low</option>
+                <option value="medium">🟡 Medium</option>
+                <option value="high">🔴 High</option>
+              </select>
 
-        <AnimatePresence>
-          {isAdding ? (
-            <motion.form
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: 10 }}
-              onSubmit={addTodo}
-              className="mt-4"
-            >
-              <div className="flex gap-2">
-                <input
-                  autoFocus
-                  type="text"
-                  value={newTodo}
-                  onChange={(e) => setNewTodo(e.target.value)}
-                  placeholder="What needs to be done?"
-                  className="flex-1 px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                />
-                <button
-                  type="button"
-                  onClick={() => setIsAdding(false)}
-                  className="p-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+              <button
+                onClick={() => setShowCompleted(!showCompleted)}
+                className={cn(
+                  "px-4 py-2 rounded-lg border transition-colors",
+                  showCompleted
+                    ? "border-indigo-500 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300"
+                    : "border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700"
+                )}
+              >
+                {showCompleted ? "Hide" : "Show"} Completed
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <TaskForm
+          open={isAddingTask}
+          onOpenChange={setIsAddingTask}
+          onSubmit={addTodo}
+        />
+
+        {todos.length === 0 ? (
+          <EmptyState onAddClick={() => setIsAddingTask(true)} />
+        ) : (
+          <DragDropContext onDragEnd={handleDragEnd}>
+            <Droppable droppableId="todos">
+              {(provided) => (
+                <div
+                  {...provided.droppableProps}
+                  ref={provided.innerRef}
+                  className="space-y-2"
                 >
-                  <X className="w-6 h-6" />
-                </button>
-              </div>
-            </motion.form>
-          ) : (
-            <motion.button
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: 10 }}
-              onClick={() => setIsAdding(true)}
-              className="mt-4 flex items-center gap-2 text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300"
-            >
-              <Plus className="w-5 h-5" />
-              <span>Add new task</span>
-            </motion.button>
-          )}
-        </AnimatePresence>
+                  <AnimatePresence>
+                    {filteredTodos.map((todo, index) => (
+                      <Draggable key={todo.id} draggableId={todo.id} index={index}>
+                        {(provided) => (
+                          <div
+                            ref={provided.innerRef}
+                            {...provided.draggableProps}
+                            {...provided.dragHandleProps}
+                          >
+                            <TaskItem
+                              todo={todo}
+                              onToggleComplete={toggleComplete}
+                              onToggleImportant={toggleImportant}
+                              onDelete={deleteTodo}
+                              onUpdate={updateTodo}
+                            />
+                          </div>
+                        )}
+                      </Draggable>
+                    ))}
+                  </AnimatePresence>
+                  {provided.placeholder}
+                </div>
+              )}
+            </Droppable>
+          </DragDropContext>
+        )}
       </div>
     </div>
   )
