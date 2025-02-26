@@ -20,7 +20,8 @@ export default defineConfig({
     hmr: {
       clientPort: 3000,
       host: 'localhost'
-    }
+    },
+    allowedHosts: ['.blink.new']
   },
   preview: {
     port: 3000,
@@ -31,4 +32,4 @@ export default defineConfig({
     outDir: 'dist',
     sourcemap: true,
   }
-}) 
+})
